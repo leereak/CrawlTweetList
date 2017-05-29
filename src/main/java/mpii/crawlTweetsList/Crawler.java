@@ -82,17 +82,18 @@ public class Crawler
 	public void crawlOneDay(String startDate, String endDate){
 		System.out.println(startDate);
 		String appendQuery = "";
-		if (!this.userName.equals("")) {
-			appendQuery += "from:"+this.userName;
-		}
-		appendQuery += " since:"+startDate;
-		appendQuery += " until:"+endDate;
 		if (!this.query.equals("")) {
-			appendQuery += " "+this.query;
+			appendQuery=appendQuery+this.query;
 		}
+		if (!this.userName.equals("")) {
+			appendQuery=appendQuery+" from:"+this.userName;
+		}
+		appendQuery=appendQuery+" since:"+startDate;
+		appendQuery=appendQuery+" until:"+endDate;
+		
 		String q="";
 		try {
-			q = URLEncoder.encode(appendQuery, "UTF-8");
+			q = URLEncoder.encode(appendQuery, "UTF-8").replace("+", "%20");
 		} catch (UnsupportedEncodingException e1) {
 			e1.printStackTrace();
 		}
@@ -107,11 +108,18 @@ public class Crawler
 			e1.printStackTrace();
 		}
 		bw=new BufferedWriter(writer);
+		try {
+			bw.write("username"+"\t"+"date"+"\t"+"retweets"+"\t"+"favorites"+"\t"+"text"+"\t"+"geo"+"\t"+"mentions"+"\t"+"hashtags"+"\t"+"id"+"\t"+"permalink");
+		} catch (IOException e1) {
+			e1.printStackTrace();
+		}
 		SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm");
 		int line=0;
+		int retry=0;
 		while(true){
 			try {
 				url = "https://twitter.com/i/search/timeline?f=tweets&q="+q+"&src=typd&max_position="+refreshCursor;
+//				System.out.println(url);
 				String result=restGet(url);
 				//System.out.println(result);
 				JSONObject job=JSONObject.fromObject(result);
@@ -120,14 +128,22 @@ public class Crawler
 				Document doc = Jsoup.parse(html);
 				Elements tweets = doc.select("div.js-stream-tweet");
 				if (tweets.size() == 0) {
-					System.out.println(url);
-					break;
+					if(refreshCursor.equals("")||retry>10){
+						System.out.println(url);
+						break;
+						}
+					else{	
+						retry++;
+						System.out.println("retry times:"+retry);
+						continue;
+						}
 				}
+				retry=0;
 				for (Element tweet : tweets) {
 					line++;
 					try{
-						String userNameTweet = tweet.select("span.username.js-action-profile-name b").text();
-						String txt = tweet.select("p.js-tweet-text").text().replaceAll("[^\\u0000-\\uFFFF]", "").replaceAll("\t","").replaceAll("\n", "");
+						String userNameTweet = tweet.select("a.js-user-profile-link").attr("href").replaceAll("/","");
+						String txt = tweet.select("p.js-tweet-text").text().replaceAll("[^\\u0000-\\uFFFF]", "").replaceAll("\t","");
 						String retweets = tweet.select("span.ProfileTweet-action--retweet span.ProfileTweet-actionCount").attr("data-tweet-stat-count").replaceAll(",", "");
 						String favorites = tweet.select("span.ProfileTweet-action--favorite span.ProfileTweet-actionCount").attr("data-tweet-stat-count").replaceAll(",", "");
 						String dateMs = tweet.select("small.time span.js-short-timestamp").attr("data-time-ms");
@@ -144,7 +160,7 @@ public class Crawler
 							geo = geoElement.attr("title");
 						}
 						List<String> list = Arrays.asList(userNameTweet, id, dateStr, retweets,favorites,hashtag,mentions,geo,txt,permalink);
-						String tempString=String.join("\t",list)+"\n";
+						String tempString="\n"+String.join("\t",list).replaceAll("\n", "");
 						bw.write(tempString);
 					}catch(Exception e){
 						e.printStackTrace();
@@ -188,6 +204,7 @@ public class Crawler
 				}
 			} catch (Exception e) {
 				e.printStackTrace();
+				break;
 			}
 		}
 		BufferedReader rd;
@@ -198,6 +215,7 @@ public class Crawler
 				result = result + line;
 			}
 			rd.close();
+			Thread.sleep(1000);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
